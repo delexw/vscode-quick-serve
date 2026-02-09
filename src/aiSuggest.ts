@@ -93,7 +93,7 @@ You have tools to explore the project folder, read files, and run shell commands
 Explore as needed, then summarize all discovered servers. For each server describe:
 - name: concise label based on the project root folder (e.g. "App Frontend", "API Backend")
 - url: local URL with port (e.g. "http://localhost:3000") or a local proxy/reverse-proxy URL matching patterns like "https://*.dev", "https://*.test", "https://*.local" (e.g. "https://myapp.test/app", "https://api.myproject.dev"). Check project markdown files, Caddyfile, nginx configs, .env files for these URLs.
-- startCommand: the command to start it from the project folder
+- startCommand: MUST start with "cd /absolute/path/to/project && " followed by the command (e.g. "cd /Users/me/projects/myapp && npm run dev"). This ensures the command works from any working directory.
 
 PRIORITY for startCommand:
 1. Shell alias/function from user's shell (highest precedence)
@@ -101,7 +101,7 @@ PRIORITY for startCommand:
 3. Project commands (npm run dev, make serve, docker compose up)
 4. Framework defaults (fallback)
 
-Only suggest servers evidenced by the files. Do not guess.`;
+Only suggest servers evidenced by the files. Do not guess. Do not return duplicate servers — if the same service appears multiple times, merge into one entry.`;
 
 const serverSuggestionSchema = z.object({
   servers: z.array(z.object({
@@ -398,14 +398,24 @@ export async function suggestServers(store: ServerStore, apiKey: string): Promis
     },
   );
 
-  log.info(`\nScan complete. Total: ${allServers.length} server(s) across ${childFolders.length} subfolder(s)`);
+  // Deduplicate by startCommand
+  const seen = new Set<string>();
+  const uniqueServers: ServerSuggestion[] = [];
+  for (const server of allServers) {
+    if (!seen.has(server.startCommand)) {
+      seen.add(server.startCommand);
+      uniqueServers.push(server);
+    }
+  }
 
-  if (allServers.length === 0) {
+  log.info(`\nScan complete. Total: ${uniqueServers.length} unique server(s) (${allServers.length} before dedup) across ${childFolders.length} subfolder(s)`);
+
+  if (uniqueServers.length === 0) {
     vscode.window.showInformationMessage('Quick Serve: No servers detected in any subfolder.');
     return 0;
   }
 
-  const suggestions = { servers: allServers };
+  const suggestions = { servers: uniqueServers };
 
   // QuickPick
   const items = suggestions.servers.map(s => ({

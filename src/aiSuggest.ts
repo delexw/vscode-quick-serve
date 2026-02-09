@@ -281,7 +281,7 @@ async function scanFolder(
 
 export async function suggestServers(store: ServerStore, apiKey: string): Promise<number> {
 
-  // Pick folder — workspace folders as QuickPick, or type a path
+  // Pick folder — always show QuickPick first for context
   const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
   const folderItems: vscode.QuickPickItem[] = [
     ...workspaceFolders.map(wf => ({
@@ -291,41 +291,28 @@ export async function suggestServers(store: ServerStore, apiKey: string): Promis
     { label: '$(folder) Browse...', description: 'Pick a folder from disk' },
   ];
 
+  const folderChoice = await vscode.window.showQuickPick(folderItems, {
+    placeHolder: 'Pick the parent folder containing your server projects',
+    title: 'Quick Serve: AI Scan — Select Folder',
+    ignoreFocusOut: true,
+  });
+  if (!folderChoice) { return 0; }
+
   let folderUri: vscode.Uri;
 
-  if (workspaceFolders.length === 0) {
+  if (folderChoice.label === '$(folder) Browse...') {
     const picked = await vscode.window.showOpenDialog({
       canSelectFolders: true,
       canSelectFiles: false,
       canSelectMany: false,
       openLabel: 'Scan Folder',
-      title: 'Quick Serve: Pick the parent folder containing your server projects',
     });
     if (!picked || picked.length === 0) { return 0; }
     folderUri = picked[0];
   } else {
-    const selected = await vscode.window.showQuickPick(folderItems, {
-      placeHolder: 'Pick the parent folder containing your server projects',
-      title: 'Quick Serve: AI Scan — Select Folder',
-      ignoreFocusOut: true,
-    });
-    if (!selected) { return 0; }
-
-    if (selected.label === '$(folder) Browse...') {
-      const picked = await vscode.window.showOpenDialog({
-        canSelectFolders: true,
-        canSelectFiles: false,
-        canSelectMany: false,
-        openLabel: 'Scan Folder',
-        title: 'Quick Serve: Pick the parent folder containing your server projects',
-      });
-      if (!picked || picked.length === 0) { return 0; }
-      folderUri = picked[0];
-    } else {
-      const wf = workspaceFolders.find(f => f.uri.fsPath === selected.description);
-      if (!wf) { return 0; }
-      folderUri = wf.uri;
-    }
+    const wf = workspaceFolders.find(f => f.uri.fsPath === folderChoice.description);
+    if (!wf) { return 0; }
+    folderUri = wf.uri;
   }
 
   // Resolve AI model

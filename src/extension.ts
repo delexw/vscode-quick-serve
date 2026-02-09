@@ -5,13 +5,32 @@ import { ServerTreeProvider } from './serverTreeProvider.js';
 import { HealthChecker } from './healthChecker.js';
 import { ServerEntry } from './types.js';
 import { config } from './config.js';
+import { suggestServers } from './aiSuggest.js';
 
 const terminals = new Map<string, vscode.Terminal>();
+const SECRET_KEY = 'quickServe.ai.apiKey';
+
+async function getOrPromptApiKey(secrets: vscode.SecretStorage): Promise<string | undefined> {
+  let apiKey = await secrets.get(SECRET_KEY);
+  if (apiKey) { return apiKey; }
+
+  apiKey = await vscode.window.showInputBox({
+    prompt: 'Enter your AI provider API key',
+    placeHolder: 'sk-...',
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (!apiKey) { return undefined; }
+
+  await secrets.store(SECRET_KEY, apiKey);
+  return apiKey;
+}
 
 export function activate(context: vscode.ExtensionContext) {
   const store = new ServerStore();
   const treeProvider = new ServerTreeProvider(store);
   const healthChecker = new HealthChecker(store, treeProvider);
+  const secrets = context.secrets;
 
   const treeView = vscode.window.createTreeView('quickServeServers', {
     treeDataProvider: treeProvider,
@@ -125,6 +144,40 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('quickServe.refreshServers', () => {
       healthChecker.checkAll();
+    }),
+
+    vscode.commands.registerCommand('quickServe.enableAISuggestions', async () => {
+      const cfg = vscode.workspace.getConfiguration('quickServe');
+      if (!cfg.get<boolean>('ai.enabled', false)) {
+        await cfg.update('ai.enabled', true, vscode.ConfigurationTarget.Global);
+      }
+      const apiKey = await getOrPromptApiKey(secrets);
+      if (!apiKey) { return; }
+      const added = await suggestServers(store, apiKey);
+      if (added > 0) {
+        treeProvider.refresh();
+        healthChecker.checkAll();
+      }
+    }),
+
+    vscode.commands.registerCommand('quickServe.suggestServers', async () => {
+      if (!config.aiEnabled) {
+        const action = await vscode.window.showErrorMessage(
+          'Quick Serve: AI suggestions are disabled. Enable via "Quick Serve: Enable AI Suggestions" command.',
+          'Enable Now',
+        );
+        if (action === 'Enable Now') {
+          vscode.commands.executeCommand('quickServe.enableAISuggestions');
+        }
+        return;
+      }
+      const apiKey = await getOrPromptApiKey(secrets);
+      if (!apiKey) { return; }
+      const added = await suggestServers(store, apiKey);
+      if (added > 0) {
+        treeProvider.refresh();
+        healthChecker.checkAll();
+      }
     }),
   );
 

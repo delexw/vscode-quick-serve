@@ -66,6 +66,16 @@
         "command": "quickServe.refreshServers",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "quickServe.enableAISuggestions",
+        "title": "Quick Serve: Enable AI Suggestions",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "quickServe.suggestServers",
+        "title": "Suggest Servers (AI)",
+        "icon": "$(sparkle)"
       }
     ],
     "configuration": {
@@ -80,6 +90,63 @@
             "Run start commands in an external terminal window"
           ],
           "description": "Which terminal to use when starting servers"
+        },
+        "quickServe.ai.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable AI-powered server suggestions"
+        },
+        "quickServe.ai.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "anthropic", "google", "openai-compatible"],
+          "enumDescriptions": [
+            "OpenAI (gpt-5-nano, gpt-5-mini, gpt-5, gpt-5.2, etc.)",
+            "Anthropic (claude-opus-4-6, claude-sonnet-4-5, etc.)",
+            "Google (gemini-3-flash-preview, gemini-3-pro-preview, etc.)",
+            "Any OpenAI-compatible API (OpenRouter, Ollama, Together, Groq, etc.) — set baseUrl"
+          ],
+          "description": "AI provider for server suggestions"
+        },
+        "quickServe.ai.model": {
+          "type": "string",
+          "default": "gpt-5.2",
+          "enum": [
+            "gpt-5-nano",
+            "gpt-5-mini",
+            "gpt-5",
+            "gpt-5.2",
+            "gpt-5.3-codex",
+            "claude-opus-4-6",
+            "claude-sonnet-4-5-20250929",
+            "claude-haiku-4-5-20251001",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview"
+          ],
+          "enumDescriptions": [
+            "OpenAI GPT-5 Nano - fastest, cheapest (Recommended)",
+            "OpenAI GPT-5 Mini - fast and capable",
+            "OpenAI GPT-5 - flagship model",
+            "OpenAI GPT-5.2 - most capable reasoning",
+            "OpenAI GPT-5.3 Codex - best for agentic coding",
+            "Anthropic Claude Opus 4.6 - most capable",
+            "Anthropic Claude Sonnet 4.5 - balanced quality",
+            "Anthropic Claude Haiku 4.5 - fast and cheap",
+            "Google Gemini 3 Flash Preview - fast frontier-class",
+            "Google Gemini 3 Pro Preview - state-of-the-art reasoning"
+          ],
+          "description": "Model ID for the selected provider. Pick a model matching your provider."
+        },
+        "quickServe.ai.maxSteps": {
+          "type": ["number", "null"],
+          "default": null,
+          "minimum": 1,
+          "description": "Maximum AI exploration steps. null = no limit (default). Set a number to cap token usage."
+        },
+        "quickServe.ai.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom base URL for openai-compatible provider (e.g. https://openrouter.ai/api/v1, http://localhost:11434/v1)"
         },
         "quickServe.servers": {
           "type": "array",
@@ -117,6 +184,11 @@
           "command": "quickServe.refreshServers",
           "when": "view == quickServeServers",
           "group": "navigation"
+        },
+        {
+          "command": "quickServe.suggestServers",
+          "when": "view == quickServeServers && config.quickServe.ai.enabled",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -147,6 +219,13 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "ai": "^4.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google": "^1.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.89.0",

@@ -61,6 +61,10 @@ class AILogger {
     this.channel.appendLine(`[Error] ${message}`);
   }
 
+  resetSteps(): void {
+    this.stepNum = 0;
+  }
+
   get steps(): number {
     return this.stepNum;
   }
@@ -218,6 +222,7 @@ async function scanFolder(
   maxSteps: number | undefined,
   abortSignal: AbortSignal,
 ): Promise<ServerSuggestion[]> {
+  log.resetSteps();
   const tools = createTools(childUri);
 
   // Step 1: streamText — AI explores the subfolder

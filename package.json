@@ -11,6 +11,10 @@
   "categories": [
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/delexw/vscode-quick-serve"
+  },
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {

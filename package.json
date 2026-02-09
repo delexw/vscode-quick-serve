@@ -1,0 +1,146 @@
+{
+  "name": "vscode-quick-serve",
+  "displayName": "Quick Serve",
+  "description": "Manage and monitor local dev servers from the sidebar",
+  "version": "0.1.0",
+  "publisher": "quick-serve",
+  "engines": {
+    "vscode": "^1.89.0"
+  },
+  "type": "module",
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quickServeContainer",
+          "title": "Quick Serve",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "quickServeContainer": [
+        {
+          "id": "quickServeServers",
+          "name": "Servers"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "quickServeServers",
+        "contents": "No servers configured.\n[Add Server](command:quickServe.addServer)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "quickServe.addServer",
+        "title": "Add Server",
+        "icon": "$(add)"
+      },
+      {
+        "command": "quickServe.editServer",
+        "title": "Edit Server",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "quickServe.removeServer",
+        "title": "Remove Server",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "quickServe.startServer",
+        "title": "Start Server",
+        "icon": "$(play)"
+      },
+      {
+        "command": "quickServe.openInBrowser",
+        "title": "Open in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "quickServe.refreshServers",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "configuration": {
+      "title": "Quick Serve",
+      "properties": {
+        "quickServe.servers": {
+          "type": "array",
+          "default": [],
+          "description": "List of servers to manage",
+          "items": {
+            "type": "object",
+            "required": ["name", "url", "startCommand"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Display name for the server"
+              },
+              "url": {
+                "type": "string",
+                "description": "Server URL (e.g. https://localhost:3000/app)"
+              },
+              "startCommand": {
+                "type": "string",
+                "description": "Shell command to start the server"
+              }
+            }
+          }
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "quickServe.addServer",
+          "when": "view == quickServeServers",
+          "group": "navigation"
+        },
+        {
+          "command": "quickServe.refreshServers",
+          "when": "view == quickServeServers",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "quickServe.startServer",
+          "when": "view == quickServeServers",
+          "group": "inline@1"
+        },
+        {
+          "command": "quickServe.openInBrowser",
+          "when": "view == quickServeServers && viewItem == server-up",
+          "group": "inline@2"
+        },
+        {
+          "command": "quickServe.editServer",
+          "when": "view == quickServeServers",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "quickServe.removeServer",
+          "when": "view == quickServeServers",
+          "group": "1_modify@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.89.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

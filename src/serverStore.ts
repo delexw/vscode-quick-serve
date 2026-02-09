@@ -1,0 +1,75 @@
+import * as vscode from 'vscode';
+import { ServerEntry, ServerStatus } from './types.js';
+import * as crypto from 'crypto';
+
+interface PersistedEntry {
+  name: string;
+  url: string;
+  startCommand: string;
+}
+
+export class ServerStore {
+  private servers: ServerEntry[] = [];
+
+  constructor() {
+    this.reload();
+  }
+
+  reload(): void {
+    const config = vscode.workspace.getConfiguration('quickServe');
+    const persisted = config.get<PersistedEntry[]>('servers', []);
+    // Preserve runtime status for entries that already exist
+    const oldStatuses = new Map(this.servers.map(s => [s.name + s.url, s.status]));
+    this.servers = persisted.map(s => ({
+      id: crypto.randomUUID(),
+      ...s,
+      status: oldStatuses.get(s.name + s.url) ?? ServerStatus.Unknown,
+    }));
+  }
+
+  getAll(): ServerEntry[] {
+    return this.servers;
+  }
+
+  getById(id: string): ServerEntry | undefined {
+    return this.servers.find(s => s.id === id);
+  }
+
+  async add(name: string, url: string, startCommand: string): Promise<ServerEntry> {
+    const entry: ServerEntry = {
+      id: crypto.randomUUID(),
+      name,
+      url,
+      startCommand,
+      status: ServerStatus.Unknown,
+    };
+    this.servers.push(entry);
+    await this.persist();
+    return entry;
+  }
+
+  async update(id: string, patch: Partial<Pick<ServerEntry, 'name' | 'url' | 'startCommand'>>): Promise<void> {
+    const entry = this.getById(id);
+    if (!entry) { return; }
+    Object.assign(entry, patch);
+    await this.persist();
+  }
+
+  async remove(id: string): Promise<void> {
+    this.servers = this.servers.filter(s => s.id !== id);
+    await this.persist();
+  }
+
+  updateStatus(id: string, status: ServerStatus): void {
+    const entry = this.getById(id);
+    if (entry) {
+      entry.status = status;
+    }
+  }
+
+  private async persist(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('quickServe');
+    const toSave: PersistedEntry[] = this.servers.map(({ id, status, ...rest }) => rest);
+    await config.update('servers', toSave, vscode.ConfigurationTarget.Global);
+  }
+}

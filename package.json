@@ -71,6 +71,16 @@
     "configuration": {
       "title": "Quick Serve",
       "properties": {
+        "quickServe.terminalMode": {
+          "type": "string",
+          "default": "integrated",
+          "enum": ["integrated", "external"],
+          "enumDescriptions": [
+            "Run start commands in VS Code's integrated terminal",
+            "Run start commands in an external terminal window"
+          ],
+          "description": "Which terminal to use when starting servers"
+        },
         "quickServe.servers": {
           "type": "array",
           "default": [],

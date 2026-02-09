@@ -1,12 +1,6 @@
-import * as vscode from 'vscode';
 import { ServerEntry, ServerStatus } from './types.js';
+import { config } from './config.js';
 import * as crypto from 'crypto';
-
-interface PersistedEntry {
-  name: string;
-  url: string;
-  startCommand: string;
-}
 
 export class ServerStore {
   private servers: ServerEntry[] = [];
@@ -16,8 +10,7 @@ export class ServerStore {
   }
 
   reload(): void {
-    const config = vscode.workspace.getConfiguration('quickServe');
-    const persisted = config.get<PersistedEntry[]>('servers', []);
+    const persisted = config.servers;
     // Preserve runtime status for entries that already exist
     const oldStatuses = new Map(this.servers.map(s => [s.name + s.url, s.status]));
     this.servers = persisted.map(s => ({
@@ -68,8 +61,7 @@ export class ServerStore {
   }
 
   private async persist(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('quickServe');
-    const toSave: PersistedEntry[] = this.servers.map(({ id, status, ...rest }) => rest);
-    await config.update('servers', toSave, vscode.ConfigurationTarget.Global);
+    const toSave = this.servers.map(({ id, status, ...rest }) => rest);
+    await config.setServers(toSave);
   }
 }

@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
+import * as child_process from 'child_process';
 import { ServerStore } from './serverStore.js';
 import { ServerTreeProvider } from './serverTreeProvider.js';
 import { HealthChecker } from './healthChecker.js';
 import { ServerEntry } from './types.js';
+import { config } from './config.js';
 
 const terminals = new Map<string, vscode.Terminal>();
 
@@ -40,18 +42,21 @@ export function activate(context: vscode.ExtensionContext) {
       const name = await vscode.window.showInputBox({
         prompt: 'Server name',
         placeHolder: 'e.g. Frontend Dev',
+        ignoreFocusOut: true,
       });
       if (!name) { return; }
 
       const url = await vscode.window.showInputBox({
         prompt: 'Server URL',
         placeHolder: 'e.g. https://localhost:3000/app',
+        ignoreFocusOut: true,
       });
       if (!url) { return; }
 
       const startCommand = await vscode.window.showInputBox({
         prompt: 'Start command (shell command to start the server)',
         placeHolder: 'e.g. cd /path && npm start',
+        ignoreFocusOut: true,
       });
       if (!startCommand) { return; }
 
@@ -64,18 +69,21 @@ export function activate(context: vscode.ExtensionContext) {
       const name = await vscode.window.showInputBox({
         prompt: 'Server name',
         value: entry.name,
+        ignoreFocusOut: true,
       });
       if (!name) { return; }
 
       const url = await vscode.window.showInputBox({
         prompt: 'Server URL',
         value: entry.url,
+        ignoreFocusOut: true,
       });
       if (!url) { return; }
 
       const startCommand = await vscode.window.showInputBox({
         prompt: 'Start command',
         value: entry.startCommand,
+        ignoreFocusOut: true,
       });
       if (!startCommand) { return; }
 
@@ -96,13 +104,19 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('quickServe.startServer', (entry: ServerEntry) => {
-      let terminal = terminals.get(entry.id);
-      if (!terminal || !vscode.window.terminals.includes(terminal)) {
-        terminal = vscode.window.createTerminal(`Quick Serve: ${entry.name}`);
-        terminals.set(entry.id, terminal);
+      const mode = config.terminalMode;
+
+      if (mode === 'external') {
+        startInExternalTerminal(entry);
+      } else {
+        let terminal = terminals.get(entry.id);
+        if (!terminal || !vscode.window.terminals.includes(terminal)) {
+          terminal = vscode.window.createTerminal(`Quick Serve: ${entry.name}`);
+          terminals.set(entry.id, terminal);
+        }
+        terminal.sendText(entry.startCommand);
+        terminal.show();
       }
-      terminal.sendText(entry.startCommand);
-      terminal.show();
     }),
 
     vscode.commands.registerCommand('quickServe.openInBrowser', (entry: ServerEntry) => {
@@ -115,6 +129,38 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   healthChecker.start();
+}
+
+function startInExternalTerminal(entry: ServerEntry): void {
+  const { startCommand, name } = entry;
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    child_process.spawn('osascript', [
+      '-e', `tell application "Terminal" to do script "${startCommand.replace(/"/g, '\\"')}"`,
+      '-e', `tell application "Terminal" to activate`,
+    ], { detached: true, stdio: 'ignore' }).unref();
+  } else if (platform === 'win32') {
+    child_process.spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', startCommand], {
+      detached: true, stdio: 'ignore',
+    }).unref();
+  } else {
+    // Linux: try common terminal emulators
+    const terminals = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xterm'];
+    let launched = false;
+    for (const term of terminals) {
+      try {
+        const args = term === 'gnome-terminal' ? ['--', 'bash', '-c', startCommand]
+          : ['-e', `bash -c "${startCommand.replace(/"/g, '\\"')}; exec bash"`];
+        child_process.spawn(term, args, { detached: true, stdio: 'ignore' }).unref();
+        launched = true;
+        break;
+      } catch { /* try next */ }
+    }
+    if (!launched) {
+      vscode.window.showErrorMessage(`Quick Serve: Could not find an external terminal for "${name}"`);
+    }
+  }
 }
 
 export function deactivate() {}

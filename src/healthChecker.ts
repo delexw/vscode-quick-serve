@@ -5,7 +5,7 @@ import { ServerStatus } from './types.js';
 import { ServerStore } from './serverStore.js';
 import { ServerTreeProvider } from './serverTreeProvider.js';
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export class HealthChecker implements vscode.Disposable {

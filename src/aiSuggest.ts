@@ -81,14 +81,16 @@ function getLogger(): AILogger {
 
 const SYSTEM_PROMPT = `You are a dev-tools assistant. The user has selected a project folder. Your task: find every server, service, or application that can be started and accessed via HTTP.
 
-You have tools to explore the project folder, read files, and run shell commands. Use them to:
-1. List the directory structure to understand the project layout.
-2. Read relevant files (package.json, docker-compose.yml, Makefile, scripts/, shell configs, etc.) to find server definitions.
-3. Run shell commands to discover the user's custom aliases and functions that may start servers. For example:
-   - Run "alias" to list all shell aliases
-   - Run "declare -f" or "typeset -f" to list all shell functions
-   - Run "type <name>" to check what a specific command resolves to
-   Shell aliases/functions that start servers take HIGHEST precedence for startCommand.
+You have three tools: listDirectory, readFile, and runShellCommand. You MUST use all three. Follow these steps in order:
+
+STEP 1 (MANDATORY): Use runShellCommand to discover shell aliases and functions:
+  - runShellCommand("alias") — list all shell aliases
+  - runShellCommand("declare -f") or runShellCommand("typeset -f") — list all shell functions
+  Analyze the output for any aliases/functions that start servers. These take HIGHEST precedence for startCommand.
+
+STEP 2: Use listDirectory to explore the project folder structure.
+
+STEP 3: Use readFile to read relevant files (package.json, docker-compose.yml, Makefile, scripts/, etc.) to find server definitions.
 
 Explore as needed, then summarize all discovered servers. For each server describe:
 - name: concise label based on the project root folder (e.g. "App Frontend", "API Backend")
@@ -190,8 +192,8 @@ function createTools(folderUri: vscode.Uri) {
       execute: async ({ command }) => {
         const shell = process.env.SHELL || '/bin/bash';
         try {
-          const { stdout, stderr } = await execAsync(command, {
-            shell,
+          // Run in interactive login shell so aliases/functions are loaded
+          const { stdout, stderr } = await execAsync(`${shell} -ilc ${JSON.stringify(command)}`, {
             env: { ...process.env, HOME: homeDir },
             cwd: folderUri.fsPath,
             timeout: 10_000,

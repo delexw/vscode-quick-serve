@@ -208,6 +208,23 @@ export function activate(context: vscode.ExtensionContext) {
       healthChecker.checkAll();
     }),
 
+    vscode.commands.registerCommand('quickServe.setApiKey', async () => {
+      const apiKey = await vscode.window.showInputBox({
+        prompt: 'Enter your AI provider API key (leave empty to clear)',
+        placeHolder: 'sk-...',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (apiKey === undefined) { return; } // cancelled
+      if (apiKey === '') {
+        await secrets.delete(SECRET_KEY);
+        vscode.window.showInformationMessage('Quick Serve: API key cleared.');
+      } else {
+        await secrets.store(SECRET_KEY, apiKey);
+        vscode.window.showInformationMessage('Quick Serve: API key updated.');
+      }
+    }),
+
     vscode.commands.registerCommand('quickServe.enableAISuggestions', async () => {
       const cfg = vscode.workspace.getConfiguration('quickServe');
       if (!cfg.get<boolean>('ai.enabled', false)) {

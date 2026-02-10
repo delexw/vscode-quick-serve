@@ -78,6 +78,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "quickServe.setApiKey",
+        "title": "Quick Serve: Set AI API Key"
+      },
+      {
         "command": "quickServe.enableAISuggestions",
         "title": "Quick Serve: Enable AI Suggestions",
         "icon": "$(sparkle)"

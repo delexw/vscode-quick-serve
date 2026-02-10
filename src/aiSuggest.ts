@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as child_process from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
-import { streamText, streamObject, tool } from 'ai';
+import { streamText, generateObject, tool } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -81,29 +81,26 @@ function getLogger(): AILogger {
 
 const SYSTEM_PROMPT = `You are a dev-tools assistant. The user has selected a project folder. Your task: find every server, service, or application that can be started and accessed via HTTP.
 
-You have three tools: listDirectory, readFile, and runShellCommand. You MUST use all three. Follow these steps in order:
+You have tools: listDirectory and readFile. Follow these steps:
 
-STEP 1 (MANDATORY): Use runShellCommand to discover shell aliases and functions:
-  - runShellCommand("alias") — list all shell aliases
-  - runShellCommand("declare -f") or runShellCommand("typeset -f") — list all shell functions
-  Analyze the output for any aliases/functions that start servers. These take HIGHEST precedence for startCommand.
+STEP 1: Use listDirectory to explore the project folder structure.
 
-STEP 2: Use listDirectory to explore the project folder structure.
+STEP 2: Use readFile to read relevant files (package.json, docker-compose.yml, Makefile, scripts/, etc.) to find server definitions.
 
-STEP 3: Use readFile to read relevant files (package.json, docker-compose.yml, Makefile, scripts/, etc.) to find server definitions.
+The user's shell aliases and functions are provided in the <shell-context> tag of the prompt. Check for any aliases/functions that start servers relevant to this project.
 
 Explore as needed, then summarize all discovered servers. For each server describe:
 - name: concise label based on the project root folder (e.g. "App Frontend", "API Backend")
-- url: local URL with port (e.g. "http://localhost:3000") or a local proxy/reverse-proxy URL matching patterns like "https://*.dev", "https://*.test", "https://*.local" (e.g. "https://myapp.test/app", "https://api.myproject.dev"). Check project markdown files, Caddyfile, nginx configs, .env files for these URLs.
+- url: the WEB URL that a developer would open in a browser. This must be the frontend/UI URL, NOT internal API endpoints, database connections, or backend service URLs. Use local URL with port (e.g. "http://localhost:3000") or a local proxy/reverse-proxy URL matching patterns like "https://*.dev", "https://*.test", "https://*.local" (e.g. "https://myapp.test/app", "https://api.myproject.dev"). Check project markdown files, Caddyfile, nginx configs, .env files for these URLs.
 - startCommand: MUST start with "cd /absolute/path/to/project && " followed by the command (e.g. "cd /Users/me/projects/myapp && npm run dev"). This ensures the command works from any working directory.
 
 PRIORITY for startCommand:
-1. Shell alias/function from user's shell (highest precedence)
+1. Shell alias/function from <shell-context> (highest precedence)
 2. Project scripts (./scripts/start.sh, ./bin/serve)
 3. Project commands (npm run dev, make serve, docker compose up)
 4. Framework defaults (fallback)
 
-Only suggest servers evidenced by the files. Do not guess. Do not return duplicate servers — if the same service appears multiple times, merge into one entry.`;
+Only suggest servers evidenced by the files. Do not guess. Do not return duplicate servers — if the same service appears with different startCommands, keep only the one with the highest precedence per the PRIORITY list above.`;
 
 const serverSuggestionSchema = z.object({
   servers: z.array(z.object({
@@ -133,19 +130,104 @@ function resolveModel(provider: AIProvider, modelId: string, apiKey: string) {
   }
 }
 
+async function readFileIfExists(filePath: string): Promise<string | null> {
+  try {
+    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+    const content = new TextDecoder().decode(bytes);
+    if (content.includes('\0')) { return null; }
+    const lines = content.split('\n');
+    if (lines.length > MAX_LINES_PER_FILE) {
+      return lines.slice(0, MAX_LINES_PER_FILE).join('\n') + `\n... (truncated, ${lines.length} total lines)`;
+    }
+    return content;
+  } catch {
+    return null;
+  }
+}
+
+async function listDirIfExists(dirPath: string): Promise<string[]> {
+  try {
+    const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
+    return entries.map(([name]) => name);
+  } catch {
+    return [];
+  }
+}
+
+async function discoverShellContext(log: AILogger): Promise<string> {
+  const homeDir = os.homedir();
+  const shell = process.env.SHELL || '/bin/bash';
+  const sections: string[] = [];
+
+  // 1. Read shell config files
+  const configFiles = [
+    '~/.zshrc', '~/.bashrc', '~/.bash_profile', '~/.profile',
+    '~/.aliases', '~/.zsh_aliases',
+  ];
+
+  for (const cf of configFiles) {
+    const fullPath = cf.replace('~', homeDir);
+    const content = await readFileIfExists(fullPath);
+    if (content) {
+      sections.push(`=== ${cf} ===\n${content}`);
+    }
+  }
+
+  // 2. Read shell framework custom dirs
+  const frameworkDirs = [
+    { dir: `${homeDir}/.oh-my-zsh/custom`, ext: '.zsh' },
+    { dir: `${homeDir}/.oh-my-bash/custom`, ext: '.bash' },
+    { dir: `${homeDir}/.bash_it/custom`, ext: '.bash' },
+  ];
+
+  for (const { dir, ext } of frameworkDirs) {
+    const files = await listDirIfExists(dir);
+    for (const file of files) {
+      if (file.endsWith(ext)) {
+        const content = await readFileIfExists(`${dir}/${file}`);
+        if (content) {
+          sections.push(`=== ${dir}/${file} ===\n${content}`);
+        }
+      }
+    }
+  }
+
+  // 3. List function names (compact — names only, not bodies)
+  try {
+    const { stdout } = await execAsync(`${shell} -ilc "typeset +f"`, {
+      env: { ...process.env, HOME: homeDir },
+      timeout: 10_000,
+    });
+    if (stdout.trim()) {
+      sections.push(`=== Shell function names (typeset +f) ===\n${stdout.trim()}`);
+    }
+  } catch {
+    // ignore
+  }
+
+  const context = sections.join('\n\n');
+  log.info(`Shell context: ${sections.length} sources, ${context.length} chars`);
+  return context;
+}
+
 function createTools(folderUri: vscode.Uri) {
   const homeDir = os.homedir();
 
   return {
     listDirectory: tool({
-      description: 'List files and directories at a path relative to the project folder. Use "" or "." for root. Returns names with trailing / for directories.',
+      description: 'List files and directories. Use a path relative to the project folder, or an absolute path starting with ~ for home directory (e.g. "~/.oh-my-zsh/custom/"). Use "" or "." for project root. Returns names with trailing / for directories.',
       parameters: z.object({
-        path: z.string().describe('Relative path within the project folder (e.g. "", "src", "scripts")'),
+        path: z.string().describe('Relative path within project (e.g. "", "src") or absolute with ~ (e.g. "~/.oh-my-zsh/custom/")'),
       }),
       execute: async ({ path }) => {
-        const targetUri = path && path !== '.'
-          ? vscode.Uri.joinPath(folderUri, path)
-          : folderUri;
+        let targetUri: vscode.Uri;
+        if (path.startsWith('~')) {
+          targetUri = vscode.Uri.file(path.replace('~', homeDir));
+        } else {
+          targetUri = path && path !== '.'
+            ? vscode.Uri.joinPath(folderUri, path)
+            : folderUri;
+        }
         try {
           const entries = await vscode.workspace.fs.readDirectory(targetUri);
           return entries
@@ -183,33 +265,6 @@ function createTools(folderUri: vscode.Uri) {
         }
       },
     }),
-
-    runShellCommand: tool({
-      description: 'Run a shell command in a login shell to discover aliases, functions, and environment. Useful commands: "alias" (list all aliases), "declare -f" or "typeset -f" (list all functions), "type <name>" (check what a command resolves to). Output is truncated to 5000 chars.',
-      parameters: z.object({
-        command: z.string().describe('Shell command to execute (e.g. "alias", "declare -f", "type serve")'),
-      }),
-      execute: async ({ command }) => {
-        const shell = process.env.SHELL || '/bin/bash';
-        try {
-          // Run in interactive login shell so aliases/functions are loaded
-          const { stdout, stderr } = await execAsync(`${shell} -ilc ${JSON.stringify(command)}`, {
-            env: { ...process.env, HOME: homeDir },
-            cwd: folderUri.fsPath,
-            timeout: 10_000,
-          });
-          const output = (stdout + (stderr ? `\n${stderr}` : '')).trim();
-          if (!output) { return '(no output)'; }
-          if (output.length > 5000) {
-            return output.slice(0, 5000) + '\n... (truncated)';
-          }
-          return output;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          return `Error: ${msg}`;
-        }
-      },
-    }),
   };
 }
 
@@ -223,6 +278,7 @@ async function scanFolder(
   log: AILogger,
   maxSteps: number | undefined,
   abortSignal: AbortSignal,
+  shellContext: string,
 ): Promise<ServerSuggestion[]> {
   log.resetSteps();
   const tools = createTools(childUri);
@@ -233,7 +289,7 @@ async function scanFolder(
     const textStream = streamText({
       model,
       system: SYSTEM_PROMPT,
-      prompt: `Project folder: ${childUri.fsPath}\nUser home: ${os.homedir()}\nUser shell: ${process.env.SHELL || '/bin/bash'}`,
+      prompt: `Project folder: ${childUri.fsPath}\nUser home: ${os.homedir()}\nUser shell: ${process.env.SHELL || '/bin/bash'}\n\n<shell-context>\n${shellContext}\n</shell-context>`,
       tools,
       maxSteps,
       abortSignal,
@@ -256,22 +312,15 @@ async function scanFolder(
   log.info(`Analysis of ${name} complete (${log.steps} steps)`);
   log.info('Extracting structured results...');
 
-  // Step 2: streamObject — extract servers
+  // Step 2: generateObject — extract servers
   try {
-    const objStream = streamObject({
+    const { object: result } = await generateObject({
       model,
       schema: serverSuggestionSchema,
       prompt: `Based on the following analysis of a project folder, extract all detected servers.\n\n${finalText}`,
       abortSignal,
     });
 
-    for await (const partial of objStream.partialObjectStream) {
-      if (partial.servers) {
-        log.info(`... found ${partial.servers.length} server(s) so far in ${name}`);
-      }
-    }
-
-    const result = await objStream.object;
     log.info(`Found ${result.servers.length} server(s) in ${name}`);
     return result.servers;
   } catch (err: unknown) {
@@ -356,6 +405,10 @@ export async function suggestServers(store: ServerStore, apiKey: string): Promis
   log.start(folderUri.fsPath, config.aiProvider, config.aiModel);
   log.info(`Found ${childFolders.length} subfolder(s) to scan`);
 
+  // Discover shell context once (shared across all child folder scans)
+  log.info('Discovering shell aliases and functions...');
+  const shellContext = await discoverShellContext(log);
+
   const maxSteps = config.aiMaxSteps ?? 100;
   const allServers: ServerSuggestion[] = [];
 
@@ -381,7 +434,7 @@ export async function suggestServers(store: ServerStore, apiKey: string): Promis
         progress.report({ message: `(${i + 1}/${childFolders.length}) ${name}` });
         log.info(`\n========== Scanning: ${name} (${i + 1}/${childFolders.length}) ==========`);
 
-        const servers = await scanFolder(childUri, name, model, log, maxSteps, abort.signal);
+        const servers = await scanFolder(childUri, name, model, log, maxSteps, abort.signal, shellContext);
         allServers.push(...servers);
       }
     },

@@ -36,6 +36,12 @@ export function activate(context: vscode.ExtensionContext) {
     treeDataProvider: treeProvider,
   });
 
+  // Defer server loading so the panel renders first
+  queueMicrotask(() => {
+    store.reload();
+    treeProvider.refresh();
+  });
+
   context.subscriptions.push(
     treeView,
     healthChecker,

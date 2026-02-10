@@ -6,7 +6,7 @@ export class ServerStore {
   private servers: ServerEntry[] = [];
 
   constructor() {
-    this.reload();
+    // Don't load here — let activate() defer it so the panel renders first
   }
 
   reload(): void {

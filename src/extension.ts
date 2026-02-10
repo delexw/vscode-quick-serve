@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as child_process from 'child_process';
+import * as util from 'util';
 import { ServerStore } from './serverStore.js';
 import { ServerTreeProvider } from './serverTreeProvider.js';
 import { HealthChecker } from './healthChecker.js';
@@ -7,7 +8,62 @@ import { ServerEntry } from './types.js';
 import { config } from './config.js';
 import { suggestServers } from './aiSuggest.js';
 
+const execAsync = util.promisify(child_process.exec);
 const terminals = new Map<string, vscode.Terminal>();
+
+async function killProcessOnPort(port: number): Promise<boolean> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execAsync(`netstat -ano | findstr :${port} | findstr LISTENING`);
+      const pids = [...new Set(stdout.trim().split('\n').map(l => l.trim().split(/\s+/).pop()).filter(Boolean))];
+      for (const pid of pids) {
+        await execAsync(`taskkill /PID ${pid} /F`).catch(() => {});
+      }
+      return pids.length > 0;
+    } else {
+      const { stdout } = await execAsync(`lsof -ti :${port} -sTCP:LISTEN`);
+      const pids = stdout.trim().split('\n').filter(Boolean);
+      // Exclude any PID in our own process tree
+      const ownPids = new Set<number>();
+      for (let p: NodeJS.Process | undefined = process; p?.pid; p = undefined) {
+        ownPids.add(p.pid);
+      }
+      if (process.ppid) { ownPids.add(process.ppid); }
+      // Walk up the full ancestor chain
+      try {
+        let current = process.pid;
+        for (let i = 0; i < 20; i++) {
+          const { stdout: ppidOut } = await execAsync(`ps -o ppid= -p ${current}`);
+          const ppid = Number(ppidOut.trim());
+          if (!ppid || ppid <= 1) { break; }
+          ownPids.add(ppid);
+          current = ppid;
+        }
+      } catch { /* ignore */ }
+      const safePids = pids.filter(pid => !ownPids.has(Number(pid)));
+      if (safePids.length > 0) {
+        await execAsync(`kill ${safePids.join(' ')}`);
+        return true;
+      }
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function parsePort(url: string): number | undefined {
+  try {
+    const parsed = new URL(url);
+    if (parsed.port) { return Number(parsed.port); }
+    // Default ports
+    if (parsed.protocol === 'https:') { return 443; }
+    if (parsed.protocol === 'http:') { return 80; }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 const SECRET_KEY = 'quickServe.ai.apiKey';
 
 async function getOrPromptApiKey(secrets: vscode.SecretStorage): Promise<string | undefined> {
@@ -182,17 +238,23 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
 
-    vscode.commands.registerCommand('quickServe.restartServer', (entry: ServerEntry) => {
-      const mode = config.terminalMode;
+    vscode.commands.registerCommand('quickServe.restartServer', async (entry: ServerEntry) => {
+      // Kill process on the port first
+      const port = parsePort(entry.url);
+      if (port) {
+        await killProcessOnPort(port);
+      }
 
+      // Dispose tracked terminal
+      const existing = terminals.get(entry.id);
+      if (existing && vscode.window.terminals.includes(existing)) {
+        existing.dispose();
+      }
+
+      const mode = config.terminalMode;
       if (mode === 'external') {
         startInExternalTerminal(entry);
       } else {
-        // Kill existing terminal if tracked
-        const existing = terminals.get(entry.id);
-        if (existing && vscode.window.terminals.includes(existing)) {
-          existing.dispose();
-        }
         const terminal = vscode.window.createTerminal(`Quick Serve: ${entry.name}`);
         terminals.set(entry.id, terminal);
         terminal.sendText(entry.startCommand);

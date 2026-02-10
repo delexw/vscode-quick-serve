@@ -2,7 +2,7 @@
   "name": "vscode-quick-serve",
   "displayName": "Quick Serve",
   "description": "Manage and monitor local dev servers from the sidebar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "quick-serve",
   "engines": {
     "vscode": "^1.89.0"
@@ -103,7 +103,10 @@
         "quickServe.terminalMode": {
           "type": "string",
           "default": "integrated",
-          "enum": ["integrated", "external"],
+          "enum": [
+            "integrated",
+            "external"
+          ],
           "enumDescriptions": [
             "Run start commands in VS Code's integrated terminal",
             "Run start commands in an external terminal window"
@@ -118,7 +121,12 @@
         "quickServe.ai.provider": {
           "type": "string",
           "default": "openai",
-          "enum": ["openai", "anthropic", "google", "openai-compatible"],
+          "enum": [
+            "openai",
+            "anthropic",
+            "google",
+            "openai-compatible"
+          ],
           "enumDescriptions": [
             "OpenAI (gpt-5-nano, gpt-5-mini, gpt-5, gpt-5.2, etc.)",
             "Anthropic (claude-opus-4-6, claude-sonnet-4-5, etc.)",
@@ -157,7 +165,10 @@
           "description": "Model ID for the selected provider. Pick a model matching your provider."
         },
         "quickServe.ai.maxSteps": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "default": null,
           "minimum": 1,
           "description": "Maximum AI exploration steps. null = no limit (default). Set a number to cap token usage."
@@ -173,7 +184,11 @@
           "description": "List of servers to manage",
           "items": {
             "type": "object",
-            "required": ["name", "url", "startCommand"],
+            "required": [
+              "name",
+              "url",
+              "startCommand"
+            ],
             "properties": {
               "name": {
                 "type": "string",

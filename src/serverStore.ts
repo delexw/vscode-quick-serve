@@ -53,6 +53,11 @@ export class ServerStore {
     await this.persist();
   }
 
+  async removeMany(ids: Set<string>): Promise<void> {
+    this.servers = this.servers.filter(s => !ids.has(s.id));
+    await this.persist();
+  }
+
   updateStatus(id: string, status: ServerStatus): void {
     const entry = this.getById(id);
     if (entry) {

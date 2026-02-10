@@ -63,6 +63,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "quickServe.restartServer",
+        "title": "Restart Server",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "quickServe.openInBrowser",
         "title": "Open in Browser",
         "icon": "$(link-external)"
@@ -76,6 +81,11 @@
         "command": "quickServe.enableAISuggestions",
         "title": "Quick Serve: Enable AI Suggestions",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "quickServe.bulkRemoveServers",
+        "title": "Remove Servers...",
+        "icon": "$(trash)"
       },
       {
         "command": "quickServe.suggestServers",
@@ -194,18 +204,33 @@
           "command": "quickServe.suggestServers",
           "when": "view == quickServeServers && config.quickServe.ai.enabled",
           "group": "navigation"
+        },
+        {
+          "command": "quickServe.bulkRemoveServers",
+          "when": "view == quickServeServers",
+          "group": "2_manage"
         }
       ],
       "view/item/context": [
         {
           "command": "quickServe.startServer",
-          "when": "view == quickServeServers",
+          "when": "view == quickServeServers && viewItem != server-up",
+          "group": "inline@1"
+        },
+        {
+          "command": "quickServe.restartServer",
+          "when": "view == quickServeServers && viewItem == server-up",
           "group": "inline@1"
         },
         {
           "command": "quickServe.openInBrowser",
           "when": "view == quickServeServers && viewItem == server-up",
           "group": "inline@2"
+        },
+        {
+          "command": "quickServe.removeServer",
+          "when": "view == quickServeServers",
+          "group": "inline@3"
         },
         {
           "command": "quickServe.editServer",

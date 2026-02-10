@@ -128,6 +128,44 @@ export function activate(context: vscode.ExtensionContext) {
       treeProvider.refresh();
     }),
 
+    vscode.commands.registerCommand('quickServe.bulkRemoveServers', async () => {
+      const servers = store.getAll();
+      if (servers.length === 0) {
+        vscode.window.showInformationMessage('Quick Serve: No servers to remove.');
+        return;
+      }
+
+      const serverMap = new Map(servers.map(s => [`${s.name}\0${s.url}`, s.id]));
+      const items = servers.map(s => ({
+        label: s.name,
+        description: s.url,
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Select servers to remove',
+        title: 'Quick Serve: Remove Servers',
+        ignoreFocusOut: true,
+      });
+
+      if (!selected || selected.length === 0) { return; }
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Remove ${selected.length} server(s)?`,
+        { modal: true },
+        'Remove',
+      );
+      if (confirm !== 'Remove') { return; }
+
+      const idsToRemove = new Set<string>();
+      for (const item of selected) {
+        const id = serverMap.get(`${item.label}\0${item.description}`);
+        if (id) { idsToRemove.add(id); }
+      }
+      await store.removeMany(idsToRemove);
+      treeProvider.refresh();
+    }),
+
     vscode.commands.registerCommand('quickServe.startServer', (entry: ServerEntry) => {
       const mode = config.terminalMode;
 
@@ -139,6 +177,24 @@ export function activate(context: vscode.ExtensionContext) {
           terminal = vscode.window.createTerminal(`Quick Serve: ${entry.name}`);
           terminals.set(entry.id, terminal);
         }
+        terminal.sendText(entry.startCommand);
+        terminal.show();
+      }
+    }),
+
+    vscode.commands.registerCommand('quickServe.restartServer', (entry: ServerEntry) => {
+      const mode = config.terminalMode;
+
+      if (mode === 'external') {
+        startInExternalTerminal(entry);
+      } else {
+        // Kill existing terminal if tracked
+        const existing = terminals.get(entry.id);
+        if (existing && vscode.window.terminals.includes(existing)) {
+          existing.dispose();
+        }
+        const terminal = vscode.window.createTerminal(`Quick Serve: ${entry.name}`);
+        terminals.set(entry.id, terminal);
         terminal.sendText(entry.startCommand);
         terminal.show();
       }

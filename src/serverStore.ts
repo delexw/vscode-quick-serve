@@ -41,10 +41,30 @@ export class ServerStore {
     return entry;
   }
 
-  async update(id: string, patch: Partial<Pick<ServerEntry, 'name' | 'url' | 'startCommand'>>): Promise<void> {
+  async update(id: string, patch: Partial<Pick<ServerEntry, 'name' | 'url' | 'startCommand' | 'group'>>): Promise<void> {
     const entry = this.getById(id);
     if (!entry) { return; }
     Object.assign(entry, patch);
+    if (entry.group === undefined || entry.group === '') {
+      delete entry.group;
+    }
+    await this.persist();
+  }
+
+  async updateGroups(assignments: Map<string, string>): Promise<void> {
+    for (const [id, group] of assignments) {
+      const entry = this.getById(id);
+      if (entry) {
+        entry.group = group;
+      }
+    }
+    await this.persist();
+  }
+
+  async clearAllGroups(): Promise<void> {
+    for (const server of this.servers) {
+      delete server.group;
+    }
     await this.persist();
   }
 

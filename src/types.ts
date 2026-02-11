@@ -4,6 +4,7 @@ export interface ServerEntry {
   url: string;
   startCommand: string;
   status: ServerStatus;
+  group?: string;
 }
 
 export enum ServerStatus {

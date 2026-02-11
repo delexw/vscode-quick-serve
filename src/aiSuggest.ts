@@ -112,7 +112,7 @@ const serverSuggestionSchema = z.object({
   })).describe('List of detected server configurations'),
 });
 
-function resolveModel(provider: AIProvider, modelId: string, apiKey: string) {
+export function resolveModel(provider: AIProvider, modelId: string, apiKey: string) {
   switch (provider) {
     case 'openai':
       return createOpenAI({ apiKey })(modelId);
@@ -271,7 +271,7 @@ function createTools(folderUri: vscode.Uri) {
 }
 
 type ServerSuggestion = z.infer<typeof serverSuggestionSchema>['servers'][number];
-type Model = ReturnType<typeof resolveModel>;
+export type Model = ReturnType<typeof resolveModel>;
 
 async function scanFolder(
   childUri: vscode.Uri,

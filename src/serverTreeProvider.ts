@@ -5,15 +5,24 @@ import { ServerStore } from './serverStore.js';
 export interface ServerAttributeItem {
   type: 'attribute';
   server: ServerEntry;
-  key: keyof Pick<ServerEntry, 'name' | 'url' | 'startCommand'>;
+  key: keyof Pick<ServerEntry, 'name' | 'url' | 'startCommand' | 'group'>;
   label: string;
   value: string;
 }
 
-export type ServerTreeNode = ServerEntry | ServerAttributeItem;
+export interface GroupNode {
+  type: 'group';
+  label: string;
+}
+
+export type ServerTreeNode = ServerEntry | ServerAttributeItem | GroupNode;
 
 export function isAttribute(node: ServerTreeNode): node is ServerAttributeItem {
   return 'type' in node && node.type === 'attribute';
+}
+
+export function isGroup(node: ServerTreeNode): node is GroupNode {
+  return 'type' in node && node.type === 'group';
 }
 
 export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNode> {
@@ -27,12 +36,24 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNod
   }
 
   getTreeItem(node: ServerTreeNode): vscode.TreeItem {
+    if (isGroup(node)) {
+      const count = this.store.getAll().filter(s =>
+        node.label === 'General' ? !s.group : s.group === node.label,
+      ).length;
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+      item.iconPath = new vscode.ThemeIcon('symbol-folder');
+      item.contextValue = 'server-group';
+      item.description = `${count} server(s)`;
+      return item;
+    }
+
     if (isAttribute(node)) {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.description = node.value;
       item.iconPath = new vscode.ThemeIcon(
         node.key === 'name' ? 'tag' :
-        node.key === 'url' ? 'link' : 'terminal',
+        node.key === 'url' ? 'link' :
+        node.key === 'group' ? 'symbol-folder' : 'terminal',
       );
       item.contextValue = 'server-attribute';
       return item;
@@ -68,7 +89,29 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNod
 
   getChildren(element?: ServerTreeNode): ServerTreeNode[] {
     if (!element) {
-      return this.store.getAll();
+      const allServers = this.store.getAll();
+      const hasAnyGroup = allServers.some(s => s.group);
+
+      if (!hasAnyGroup) {
+        return allServers;
+      }
+
+      const groups = new Set<string>();
+      for (const server of allServers) {
+        groups.add(server.group ?? 'General');
+      }
+
+      return [...groups].sort((a, b) => {
+        if (a === 'General') { return 1; }
+        if (b === 'General') { return -1; }
+        return a.localeCompare(b);
+      }).map(label => ({ type: 'group' as const, label }));
+    }
+
+    if (isGroup(element)) {
+      return this.store.getAll().filter(s =>
+        element.label === 'General' ? !s.group : s.group === element.label,
+      );
     }
 
     if (!isAttribute(element)) {
@@ -77,6 +120,7 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNod
         { type: 'attribute', server, key: 'name', label: 'Name', value: server.name },
         { type: 'attribute', server, key: 'url', label: 'URL', value: server.url },
         { type: 'attribute', server, key: 'startCommand', label: 'Start Command', value: server.startCommand },
+        { type: 'attribute', server, key: 'group', label: 'Group', value: server.group ?? '(none)' },
       ];
     }
 

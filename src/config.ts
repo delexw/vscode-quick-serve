@@ -7,6 +7,7 @@ interface PersistedServer {
   name: string;
   url: string;
   startCommand: string;
+  group?: string;
 }
 
 function get() {

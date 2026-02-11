@@ -8,6 +8,7 @@ import { HealthChecker } from './healthChecker.js';
 import { ServerEntry } from './types.js';
 import { config } from './config.js';
 import { suggestServers } from './aiSuggest.js';
+import { groupServersWithAI } from './aiGroup.js';
 
 const execAsync = util.promisify(child_process.exec);
 const terminals = new Map<string, vscode.Terminal>();
@@ -176,12 +177,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('quickServe.editServerAttribute', async (attr: ServerAttributeItem) => {
       const newValue = await vscode.window.showInputBox({
         prompt: `Edit ${attr.label}`,
-        value: attr.value,
+        value: attr.value === '(none)' ? '' : attr.value,
         ignoreFocusOut: true,
       });
       if (newValue === undefined || newValue === attr.value) { return; }
 
-      await store.update(attr.server.id, { [attr.key]: newValue });
+      const patchValue = attr.key === 'group' && newValue === '' ? undefined : newValue;
+      await store.update(attr.server.id, { [attr.key]: patchValue });
       treeProvider.refresh();
     }),
 
@@ -332,6 +334,43 @@ export function activate(context: vscode.ExtensionContext) {
         treeProvider.refresh();
         healthChecker.checkAll();
       }
+    }),
+
+    vscode.commands.registerCommand('quickServe.groupServersWithAI', async () => {
+      if (!config.aiEnabled) {
+        const action = await vscode.window.showErrorMessage(
+          'Quick Serve: AI features are disabled. Enable via "Quick Serve: Enable AI Suggestions" command.',
+          'Enable Now',
+        );
+        if (action === 'Enable Now') {
+          const cfg = vscode.workspace.getConfiguration('quickServe');
+          await cfg.update('ai.enabled', true, vscode.ConfigurationTarget.Global);
+        }
+        return;
+      }
+      const apiKey = await getOrPromptApiKey(secrets);
+      if (!apiKey) { return; }
+      const grouped = await groupServersWithAI(store, apiKey);
+      if (grouped > 0) {
+        treeProvider.refresh();
+      }
+    }),
+
+    vscode.commands.registerCommand('quickServe.clearGroups', async () => {
+      const servers = store.getAll();
+      const grouped = servers.filter(s => s.group);
+      if (grouped.length === 0) {
+        vscode.window.showInformationMessage('Quick Serve: No servers have group assignments.');
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        `Clear group assignments from ${grouped.length} server(s)?`,
+        { modal: true },
+        'Clear',
+      );
+      if (confirm !== 'Clear') { return; }
+      await store.clearAllGroups();
+      treeProvider.refresh();
     }),
   );
 

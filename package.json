@@ -2,7 +2,7 @@
   "name": "vscode-quick-serve",
   "displayName": "Quick Serve",
   "description": "Manage and monitor local dev servers from the sidebar",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "quick-serve",
   "engines": {
     "vscode": "^1.89.0"
@@ -95,6 +95,21 @@
         "command": "quickServe.suggestServers",
         "title": "Suggest Servers (AI)",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "quickServe.editServerAttribute",
+        "title": "Edit Attribute",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "quickServe.groupServersWithAI",
+        "title": "Quick Serve: Group Servers (AI)",
+        "icon": "$(group-by-ref-type)"
+      },
+      {
+        "command": "quickServe.clearGroups",
+        "title": "Quick Serve: Clear Server Groups",
+        "icon": "$(clear-all)"
       }
     ],
     "configuration": {
@@ -201,6 +216,10 @@
               "startCommand": {
                 "type": "string",
                 "description": "Shell command to start the server"
+              },
+              "group": {
+                "type": "string",
+                "description": "Logical group label for organizing servers in the tree view"
               }
             }
           }
@@ -225,7 +244,17 @@
           "group": "navigation"
         },
         {
+          "command": "quickServe.groupServersWithAI",
+          "when": "view == quickServeServers && config.quickServe.ai.enabled",
+          "group": "navigation"
+        },
+        {
           "command": "quickServe.bulkRemoveServers",
+          "when": "view == quickServeServers",
+          "group": "2_manage"
+        },
+        {
+          "command": "quickServe.clearGroups",
           "when": "view == quickServeServers",
           "group": "2_manage"
         }
@@ -233,7 +262,7 @@
       "view/item/context": [
         {
           "command": "quickServe.startServer",
-          "when": "view == quickServeServers && viewItem != server-up",
+          "when": "view == quickServeServers && viewItem == server-down",
           "group": "inline@1"
         },
         {
@@ -248,18 +277,23 @@
         },
         {
           "command": "quickServe.removeServer",
-          "when": "view == quickServeServers",
+          "when": "view == quickServeServers && viewItem =~ /^server-/",
           "group": "inline@3"
         },
         {
           "command": "quickServe.editServer",
-          "when": "view == quickServeServers",
+          "when": "view == quickServeServers && viewItem =~ /^server-/",
           "group": "1_modify@1"
         },
         {
           "command": "quickServe.removeServer",
-          "when": "view == quickServeServers",
+          "when": "view == quickServeServers && viewItem =~ /^server-/",
           "group": "1_modify@2"
+        },
+        {
+          "command": "quickServe.editServerAttribute",
+          "when": "view == quickServeServers && viewItem == server-attribute",
+          "group": "inline@1"
         }
       ]
     }

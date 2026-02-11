@@ -22,8 +22,18 @@ Rules:
 - Every server must receive exactly one group assignment
 - Use title case for group names`;
 
+let channel: vscode.OutputChannel | undefined;
+
+function getChannel(): vscode.OutputChannel {
+  if (!channel) {
+    channel = vscode.window.createOutputChannel('Quick Serve');
+  }
+  return channel;
+}
+
 export async function groupServersWithAI(store: ServerStore, apiKey: string): Promise<number> {
   const servers = store.getAll();
+  const out = getChannel();
 
   if (servers.length < 2) {
     vscode.window.showInformationMessage('Quick Serve: Need at least 2 servers to create meaningful groups.');
@@ -43,8 +53,19 @@ export async function groupServersWithAI(store: ServerStore, apiKey: string): Pr
     name: s.name,
     url: s.url,
     startCommand: s.startCommand,
-    currentGroup: s.group ?? '(none)',
   }));
+
+  out.clear();
+  out.show(true);
+  out.appendLine(`[Quick Serve AI] Grouping ${servers.length} server(s)`);
+  out.appendLine(`[Quick Serve AI] Provider: ${config.aiProvider} | Model: ${config.aiModel}`);
+  out.appendLine('');
+  out.appendLine('Input:');
+  for (const s of serverList) {
+    out.appendLine(`  - ${s.name} (${s.url})`);
+  }
+  out.appendLine('');
+  out.appendLine('Waiting for AI response...');
 
   let assigned = 0;
 
@@ -63,6 +84,13 @@ export async function groupServersWithAI(store: ServerStore, apiKey: string): Pr
           prompt: `Here are the servers to group:\n\n${JSON.stringify(serverList, null, 2)}`,
         });
 
+        out.appendLine('');
+        out.appendLine('AI Response:');
+        for (const { serverId, group } of result.groups) {
+          const server = store.getById(serverId);
+          out.appendLine(`  - ${server?.name ?? serverId} → ${group}`);
+        }
+
         const assignments = new Map<string, string>();
         for (const { serverId, group } of result.groups) {
           if (store.getById(serverId)) {
@@ -70,11 +98,28 @@ export async function groupServersWithAI(store: ServerStore, apiKey: string): Pr
           }
         }
 
+        const confirm = await vscode.window.showWarningMessage(
+          `Apply group assignments to ${assignments.size} server(s)? Check the Output panel for details.`,
+          { modal: true },
+          'Apply',
+        );
+        if (confirm !== 'Apply') {
+          out.appendLine('');
+          out.appendLine('[Quick Serve AI] Cancelled by user.');
+          return;
+        }
+
         await store.updateGroups(assignments);
         assigned = assignments.size;
+
+        out.appendLine('');
+        out.appendLine(`[Quick Serve AI] Done. Grouped ${assigned} server(s).`);
       } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        out.appendLine('');
+        out.appendLine(`[Error] ${msg}`);
         vscode.window.showErrorMessage(
-          `Quick Serve: AI grouping failed — ${err instanceof Error ? err.message : String(err)}`,
+          `Quick Serve: AI grouping failed — ${msg}`,
         );
       }
     },

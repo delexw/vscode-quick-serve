@@ -100,7 +100,9 @@ PRIORITY for startCommand:
 3. Project commands (npm run dev, make serve, docker compose up)
 4. Framework defaults (fallback)
 
-Only suggest servers evidenced by the files. Do not guess. Do not return duplicate servers — if the same service appears with different startCommands, keep only the one with the highest precedence per the PRIORITY list above.`;
+Only suggest servers evidenced by the files. Do not guess. Do not return duplicate servers — if the same service appears with different startCommands, keep only the one with the highest precedence per the PRIORITY list above.
+
+IMPORTANT: The user already has servers configured. These are listed in the <existing-servers> tag of the prompt. Do NOT suggest any server that duplicates an existing one — skip it if the startCommand, url, or name matches an already-configured server.`;
 
 const serverSuggestionSchema = z.object({
   servers: z.array(z.object({
@@ -279,6 +281,7 @@ async function scanFolder(
   maxSteps: number | undefined,
   abortSignal: AbortSignal,
   shellContext: string,
+  existingServers: { name: string; url: string; startCommand: string }[],
 ): Promise<ServerSuggestion[]> {
   log.resetSteps();
   const tools = createTools(childUri);
@@ -289,7 +292,7 @@ async function scanFolder(
     const textStream = streamText({
       model,
       system: SYSTEM_PROMPT,
-      prompt: `Project folder: ${childUri.fsPath}\nUser home: ${os.homedir()}\nUser shell: ${process.env.SHELL || '/bin/bash'}\n\n<shell-context>\n${shellContext}\n</shell-context>`,
+      prompt: `Project folder: ${childUri.fsPath}\nUser home: ${os.homedir()}\nUser shell: ${process.env.SHELL || '/bin/bash'}\n\n<shell-context>\n${shellContext}\n</shell-context>\n\n<existing-servers>\n${existingServers.length > 0 ? existingServers.map(s => `- name: ${s.name} | url: ${s.url} | startCommand: ${s.startCommand}`).join('\n') : '(none)'}\n</existing-servers>`,
       tools,
       maxSteps,
       abortSignal,
@@ -434,17 +437,20 @@ export async function suggestServers(store: ServerStore, apiKey: string): Promis
         progress.report({ message: `(${i + 1}/${childFolders.length}) ${name}` });
         log.info(`\n========== Scanning: ${name} (${i + 1}/${childFolders.length}) ==========`);
 
-        const servers = await scanFolder(childUri, name, model, log, maxSteps, abort.signal, shellContext);
+        const existingServers = store.getAll().map(s => ({ name: s.name, url: s.url, startCommand: s.startCommand }));
+        const servers = await scanFolder(childUri, name, model, log, maxSteps, abort.signal, shellContext, existingServers);
         allServers.push(...servers);
       }
     },
   );
 
-  // Deduplicate by startCommand
+  // Deduplicate by startCommand and filter out servers already in the store
+  const existingCommands = new Set(store.getAll().map(s => s.startCommand));
+  const existingUrls = new Set(store.getAll().map(s => s.url));
   const seen = new Set<string>();
   const uniqueServers: ServerSuggestion[] = [];
   for (const server of allServers) {
-    if (!seen.has(server.startCommand)) {
+    if (!seen.has(server.startCommand) && !existingCommands.has(server.startCommand) && !existingUrls.has(server.url)) {
       seen.add(server.startCommand);
       uniqueServers.push(server);
     }

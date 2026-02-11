@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import * as util from 'util';
 import { ServerStore } from './serverStore.js';
-import { ServerTreeProvider } from './serverTreeProvider.js';
+import { ServerTreeProvider, isAttribute } from './serverTreeProvider.js';
+import type { ServerAttributeItem } from './serverTreeProvider.js';
 import { HealthChecker } from './healthChecker.js';
 import { ServerEntry } from './types.js';
 import { config } from './config.js';
@@ -169,6 +170,18 @@ export function activate(context: vscode.ExtensionContext) {
       if (!startCommand) { return; }
 
       await store.update(entry.id, { name, url, startCommand });
+      treeProvider.refresh();
+    }),
+
+    vscode.commands.registerCommand('quickServe.editServerAttribute', async (attr: ServerAttributeItem) => {
+      const newValue = await vscode.window.showInputBox({
+        prompt: `Edit ${attr.label}`,
+        value: attr.value,
+        ignoreFocusOut: true,
+      });
+      if (newValue === undefined || newValue === attr.value) { return; }
+
+      await store.update(attr.server.id, { [attr.key]: newValue });
       treeProvider.refresh();
     }),
 

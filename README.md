@@ -9,11 +9,13 @@ Manage and monitor local dev servers from the VS Code sidebar.
 - **Sidebar panel** — see all your servers at a glance with live status indicators (up/down/unknown)
 - **Health monitoring** — automatic polling detects when servers go down and notifies you
 - **One-click actions** — start servers in integrated or external terminal, open in browser
+- **Expandable server details** — expand any server to view and edit individual attributes (name, URL, start command, group)
+- **Drag & drop** — reorder servers or move them between groups by dragging
 - **AI-powered suggestions** — scan a project folder and let AI discover servers, URLs, and start commands
+- **AI-powered grouping** — automatically organize servers into logical groups (Frontend, Backend, etc.) with a single command
 - **Multi-provider AI** — works with OpenAI, Anthropic, Google, or any OpenAI-compatible API (OpenRouter, Ollama, etc.)
 - **Shell alias detection** — AI discovers your custom shell aliases and functions that start servers
 - **Proxy URL detection** — finds local proxy URLs (*.dev, *.test, *.local) from project configs
-- **AI-powered grouping** — automatically organize servers into logical groups (Frontend, Backend, etc.) with a single command
 
 ## Installation
 
@@ -27,6 +29,17 @@ code --install-extension vscode-quick-serve-*.vsix
 # Install in Cursor
 cursor --install-extension vscode-quick-serve-*.vsix
 ```
+
+### Updating
+
+```bash
+# Disable, install new version, re-enable
+code --disable-extension quick-serve.vscode-quick-serve
+code --install-extension vscode-quick-serve-*.vsix
+code --enable-extension quick-serve.vscode-quick-serve
+```
+
+Replace `code` with `cursor` for Cursor.
 
 ## Getting Started
 
@@ -57,6 +70,8 @@ Available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 |---|---|
 | Quick Serve: Set AI API Key | Set or clear the AI provider API key |
 | Quick Serve: Enable AI Suggestions | Enable AI and run the first scan |
+| Quick Serve: Group Servers (AI) | Organize servers into logical groups using AI |
+| Quick Serve: Clear Server Groups | Remove all group assignments |
 
 ## Settings
 

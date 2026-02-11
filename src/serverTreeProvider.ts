@@ -25,15 +25,50 @@ export function isGroup(node: ServerTreeNode): node is GroupNode {
   return 'type' in node && node.type === 'group';
 }
 
-export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNode> {
+function isServer(node: ServerTreeNode): node is ServerEntry {
+  return !isAttribute(node) && !isGroup(node);
+}
+
+const MIME_TYPE = 'application/vnd.code.tree.quickServeServers';
+
+export class ServerTreeProvider implements vscode.TreeDataProvider<ServerTreeNode>, vscode.TreeDragAndDropController<ServerTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeNode | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  readonly dragMimeTypes = [MIME_TYPE];
+  readonly dropMimeTypes = [MIME_TYPE];
 
   constructor(private store: ServerStore) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
+
+  // --- Drag & Drop ---
+
+  handleDrag(source: readonly ServerTreeNode[], dataTransfer: vscode.DataTransfer): void {
+    const server = source.find(isServer);
+    if (!server) { return; }
+    dataTransfer.set(MIME_TYPE, new vscode.DataTransferItem(server.id));
+  }
+
+  async handleDrop(target: ServerTreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+    const item = dataTransfer.get(MIME_TYPE);
+    if (!item) { return; }
+    const sourceId: string = item.value;
+    if (!sourceId || !target) { return; }
+
+    if (isGroup(target)) {
+      const group = target.label === 'General' ? undefined : target.label;
+      await this.store.reorder(sourceId, undefined, group);
+    } else if (isServer(target)) {
+      await this.store.reorder(sourceId, target.id, target.group);
+    }
+
+    this.refresh();
+  }
+
+  // --- Tree Data ---
 
   getTreeItem(node: ServerTreeNode): vscode.TreeItem {
     if (isGroup(node)) {

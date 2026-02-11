@@ -92,6 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const treeView = vscode.window.createTreeView('quickServeServers', {
     treeDataProvider: treeProvider,
+    dragAndDropController: treeProvider,
   });
 
   // Defer server loading so the panel renders first

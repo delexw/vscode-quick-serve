@@ -68,6 +68,20 @@ export class ServerStore {
     await this.persist();
   }
 
+  async reorder(sourceId: string, targetId: string | undefined, group: string | undefined): Promise<void> {
+    const sourceIdx = this.servers.findIndex(s => s.id === sourceId);
+    if (sourceIdx === -1) { return; }
+    const [source] = this.servers.splice(sourceIdx, 1);
+    if (group) { source.group = group; } else { delete source.group; }
+    if (targetId) {
+      const targetIdx = this.servers.findIndex(s => s.id === targetId);
+      this.servers.splice(targetIdx >= 0 ? targetIdx : this.servers.length, 0, source);
+    } else {
+      this.servers.push(source);
+    }
+    await this.persist();
+  }
+
   async remove(id: string): Promise<void> {
     this.servers = this.servers.filter(s => s.id !== id);
     await this.persist();

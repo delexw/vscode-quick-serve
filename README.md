@@ -2,6 +2,8 @@
 
 Manage and monitor local dev servers from the VS Code sidebar.
 
+![Quick Serve Demo](example.gif)
+
 ## Features
 
 - **Sidebar panel** — see all your servers at a glance with live status indicators (up/down/unknown)
@@ -11,6 +13,20 @@ Manage and monitor local dev servers from the VS Code sidebar.
 - **Multi-provider AI** — works with OpenAI, Anthropic, Google, or any OpenAI-compatible API (OpenRouter, Ollama, etc.)
 - **Shell alias detection** — AI discovers your custom shell aliases and functions that start servers
 - **Proxy URL detection** — finds local proxy URLs (*.dev, *.test, *.local) from project configs
+- **AI-powered grouping** — automatically organize servers into logical groups (Frontend, Backend, etc.) with a single command
+
+## Installation
+
+```bash
+# Package the extension
+npx @vscode/vsce package
+
+# Install in VS Code
+code --install-extension vscode-quick-serve-*.vsix
+
+# Install in Cursor
+cursor --install-extension vscode-quick-serve-*.vsix
+```
 
 ## Getting Started
 
@@ -32,6 +48,15 @@ For each server, provide:
 3. Pick the parent folder containing your projects
 4. AI scans each subfolder, discovers servers, and presents suggestions
 5. Select which servers to add
+
+## Commands
+
+Available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
+
+| Command | Description |
+|---|---|
+| Quick Serve: Set AI API Key | Set or clear the AI provider API key |
+| Quick Serve: Enable AI Suggestions | Enable AI and run the first scan |
 
 ## Settings
 

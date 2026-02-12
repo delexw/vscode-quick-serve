@@ -4,9 +4,7 @@ import * as https from 'https';
 import { ServerStatus } from './types.js';
 import { ServerStore } from './serverStore.js';
 import { ServerTreeProvider } from './serverTreeProvider.js';
-
-const POLL_INTERVAL_MS = 5_000;
-const REQUEST_TIMEOUT_MS = 5_000;
+import { config } from './config.js';
 
 export class HealthChecker implements vscode.Disposable {
   private intervalId: ReturnType<typeof setInterval> | undefined;
@@ -19,12 +17,18 @@ export class HealthChecker implements vscode.Disposable {
 
   start(): void {
     this.checkAll();
-    this.intervalId = setInterval(() => this.checkAll(), POLL_INTERVAL_MS);
+    this.intervalId = setInterval(() => this.checkAll(), config.healthCheckPollInterval);
+  }
+
+  restart(): void {
+    this.dispose();
+    this.start();
   }
 
   dispose(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+      this.intervalId = undefined;
     }
   }
 
@@ -54,7 +58,7 @@ export class HealthChecker implements vscode.Disposable {
       const isHttps = url.startsWith('https');
       const mod = isHttps ? https : http;
       const options: https.RequestOptions = {
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: config.healthCheckRequestTimeout,
       };
 
       if (isHttps) {

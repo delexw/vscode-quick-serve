@@ -59,6 +59,9 @@ export function activate(context: vscode.ExtensionContext) {
         store.reload();
         treeProvider.refresh();
       }
+      if (e.affectsConfiguration('quickServe.healthCheck')) {
+        healthChecker.restart();
+      }
     }),
 
     // --- Server CRUD ---

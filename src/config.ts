@@ -44,6 +44,14 @@ export const config = {
     return get().get<string>('ai.baseUrl', '');
   },
 
+  get healthCheckPollInterval(): number {
+    return get().get<number>('healthCheck.pollInterval', 5000);
+  },
+
+  get healthCheckRequestTimeout(): number {
+    return get().get<number>('healthCheck.requestTimeout', 5000);
+  },
+
   async setServers(servers: PersistedServer[]): Promise<void> {
     await get().update('servers', servers, vscode.ConfigurationTarget.Global);
   },

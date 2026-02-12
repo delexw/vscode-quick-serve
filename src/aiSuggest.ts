@@ -9,6 +9,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { config, type AIProvider } from './config.js';
 import { ServerStore } from './serverStore.js';
+import { getOutputChannel } from './outputChannel.js';
 
 const execAsync = util.promisify(child_process.exec);
 
@@ -19,7 +20,7 @@ class AILogger {
   private stepNum = 0;
 
   constructor() {
-    this.channel = vscode.window.createOutputChannel('Quick Serve');
+    this.channel = getOutputChannel();
   }
 
   start(folder: string, provider: string, model: string): void {

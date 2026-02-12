@@ -4,6 +4,7 @@ import { generateObject } from 'ai';
 import { resolveModel } from './aiSuggest.js';
 import { config } from './config.js';
 import { ServerStore } from './serverStore.js';
+import { getOutputChannel } from './outputChannel.js';
 
 const groupAssignmentSchema = z.object({
   groups: z.array(z.object({
@@ -22,18 +23,10 @@ Rules:
 - Every server must receive exactly one group assignment
 - Use title case for group names`;
 
-let channel: vscode.OutputChannel | undefined;
-
-function getChannel(): vscode.OutputChannel {
-  if (!channel) {
-    channel = vscode.window.createOutputChannel('Quick Serve');
-  }
-  return channel;
-}
 
 export async function groupServersWithAI(store: ServerStore, apiKey: string): Promise<number> {
   const servers = store.getAll();
-  const out = getChannel();
+  const out = getOutputChannel();
 
   if (servers.length < 2) {
     vscode.window.showInformationMessage('Quick Serve: Need at least 2 servers to create meaningful groups.');

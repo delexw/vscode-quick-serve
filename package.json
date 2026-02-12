@@ -2,7 +2,7 @@
   "name": "vscode-quick-serve",
   "displayName": "Quick Serve",
   "description": "Manage and monitor local dev servers from the sidebar",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "quick-serve",
   "engines": {
     "vscode": "^1.89.0"
@@ -110,6 +110,11 @@
         "command": "quickServe.clearGroups",
         "title": "Quick Serve: Clear Server Groups",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "quickServe.killServerPort",
+        "title": "Kill Port Process",
+        "icon": "$(debug-stop)"
       }
     ],
     "configuration": {
@@ -277,18 +282,28 @@
         },
         {
           "command": "quickServe.removeServer",
-          "when": "view == quickServeServers && viewItem =~ /^server-/",
+          "when": "view == quickServeServers && viewItem =~ /^server-(up|down)$/",
           "group": "inline@3"
         },
         {
+          "command": "quickServe.killServerPort",
+          "when": "view == quickServeServers && viewItem =~ /^server-(up|down)$/",
+          "group": "inline@4"
+        },
+        {
           "command": "quickServe.editServer",
-          "when": "view == quickServeServers && viewItem =~ /^server-/",
+          "when": "view == quickServeServers && viewItem =~ /^server-(up|down)$/",
           "group": "1_modify@1"
         },
         {
           "command": "quickServe.removeServer",
-          "when": "view == quickServeServers && viewItem =~ /^server-/",
+          "when": "view == quickServeServers && viewItem =~ /^server-(up|down)$/",
           "group": "1_modify@2"
+        },
+        {
+          "command": "quickServe.killServerPort",
+          "when": "view == quickServeServers && viewItem =~ /^server-(up|down)$/",
+          "group": "1_modify@3"
         },
         {
           "command": "quickServe.editServerAttribute",

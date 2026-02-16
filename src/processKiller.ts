@@ -91,7 +91,8 @@ export class ProcessKiller {
           pids = filtered;
           this.log(`After cwd filter (${cwd}): ${pids.join(', ')}`);
         } else {
-          this.log(`No PIDs matched cwd "${cwd}", using all pgrep matches`);
+          this.log(`No PIDs matched cwd "${cwd}", skipping to avoid killing unrelated processes`);
+          return [];
         }
       }
 

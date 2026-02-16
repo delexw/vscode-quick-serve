@@ -20,7 +20,7 @@ export class ProcessKiller {
    *   which are typically reverse proxies (Caddy, nginx) rather than the server itself.
    */
   async kill(entry: { startCommand: string; url: string }): Promise<boolean> {
-    const { cwd, cmd } = this.parseStartCommand(entry.startCommand);
+    const { cwd, cmd } = await this.parseStartCommand(entry.startCommand);
     this.log(`Server: cmd="${cmd}"${cwd ? `, cwd="${cwd}"` : ''}`);
 
     // Strategy 1: find by command pattern (Unix only)
@@ -215,13 +215,47 @@ export class ProcessKiller {
     }
   }
 
-  private parseStartCommand(startCommand: string): { cwd?: string; cmd: string } {
-    const match = startCommand.match(/^cd\s+("[^"]+"|'[^']+'|\S+)\s*(?:&&|;)\s*(.+)$/);
+  private async parseStartCommand(startCommand: string): Promise<{ cwd?: string; cmd: string }> {
+    const parsed = this.parseCdPrefix(startCommand);
+    if (parsed.cwd) { return parsed; }
+
+    // Bare single-word command — might be a shell alias/function.
+    // Resolve it so pgrep can match the real process command line.
+    if (process.platform !== 'win32' && /^\S+$/.test(startCommand)) {
+      const resolved = await this.resolveShellAlias(startCommand);
+      if (resolved) {
+        this.log(`Resolved alias "${startCommand}" → "${resolved}"`);
+        const resolvedParsed = this.parseCdPrefix(resolved);
+        if (resolvedParsed.cwd) { return resolvedParsed; }
+        return { cmd: resolved };
+      }
+    }
+
+    return { cmd: startCommand };
+  }
+
+  private parseCdPrefix(command: string): { cwd?: string; cmd: string } {
+    const match = command.match(/^cd\s+("[^"]+"|'[^']+'|\S+)\s*(?:&&|;)\s*(.+)$/);
     if (match) {
       const cwd = match[1].replace(/^['"]|['"]$/g, '');
       return { cwd, cmd: match[2].trim() };
     }
-    return { cmd: startCommand };
+    return { cmd: command };
+  }
+
+  private async resolveShellAlias(command: string): Promise<string | undefined> {
+    const shell = process.env.SHELL || '/bin/bash';
+    try {
+      const { stdout } = await execAsync(
+        `${shell} -ic 'type ${this.shellEscape(command)}' 2>/dev/null`,
+        { timeout: 3000 },
+      );
+      // zsh:  "start_sso_server is an alias for cd /path && cmd"
+      // bash: "start_sso_server is aliased to `cd /path && cmd'"
+      const aliasMatch = stdout.match(/is (?:aliased to|an alias for)\s+[`']?(.+?)[`']?\s*$/);
+      if (aliasMatch) { return aliasMatch[1]; }
+    } catch { /* not an alias or shell unavailable */ }
+    return undefined;
   }
 
   private shellEscape(s: string): string {

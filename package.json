@@ -2,7 +2,7 @@
   "name": "vscode-quick-serve",
   "displayName": "Quick Serve",
   "description": "Manage and monitor local dev servers from the sidebar",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "quick-serve",
   "engines": {
     "vscode": "^1.89.0"

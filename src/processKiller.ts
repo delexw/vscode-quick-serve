@@ -49,15 +49,23 @@ export class ProcessKiller {
   // ---------------------------------------------------------------------------
 
   private async killByCommand(cmd: string, cwd: string | undefined): Promise<boolean> {
-    // When cmd contains && or ;, the shell runs them sequentially — only the
-    // last segment (or a later one) is likely still running.  Try the full cmd
-    // first, then individual segments in reverse order.
-    const segments = [cmd, ...this.splitCommandSegments(cmd)];
+    // Try full command first (exact match)
+    const fullPids = await this.pgrepWithCwd(cmd, cwd);
+    if (fullPids.length > 0) {
+      return await this.killSafePids(fullPids);
+    }
 
-    for (const pattern of segments) {
-      const pids = await this.pgrepWithCwd(pattern, cwd);
-      if (pids.length > 0) {
-        return await this.killSafePids(pids);
+    // For compound commands (&&, ;), collect PIDs from ALL segments so we
+    // kill every related process — e.g. both Puma and webpack from one alias.
+    const segments = this.splitCommandSegments(cmd);
+    if (segments.length > 0) {
+      const allPids: string[] = [];
+      for (const pattern of segments) {
+        const pids = await this.pgrepWithCwd(pattern, cwd);
+        allPids.push(...pids);
+      }
+      if (allPids.length > 0) {
+        return await this.killSafePids([...new Set(allPids)]);
       }
     }
 

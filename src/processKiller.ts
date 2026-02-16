@@ -15,29 +15,30 @@ export class ProcessKiller {
   /**
    * Kill the process for a server entry.
    *
-   * Strategy 1 (Unix): `pgrep -f` by command pattern, optionally filtered by cwd.
-   * Strategy 2 (fallback): `lsof` / `netstat` by port — skipped for ports 80/443
+   * Strategy 1: `lsof` / `netstat` by port — most precise. Skipped for ports 80/443
    *   which are typically reverse proxies (Caddy, nginx) rather than the server itself.
+   * Strategy 2 (fallback, Unix): `pgrep -f` by resolved command pattern.
    */
   async kill(entry: { startCommand: string; url: string }): Promise<boolean> {
-    const { cwd, cmd } = await this.parseStartCommand(entry.startCommand);
-    this.log(`Server: cmd="${cmd}"${cwd ? `, cwd="${cwd}"` : ''}`);
+    const cmd = await this.resolveCmd(entry.startCommand);
+    this.log(`Server: cmd="${cmd}"`);
 
-    // Strategy 1: find by command pattern (Unix only)
-    if (process.platform !== 'win32') {
-      const killed = await this.killByCommand(cmd, cwd);
-      if (killed) { return true; }
-    }
-
-    // Strategy 2: port-based fallback
+    // Strategy 1: port-based kill — most precise, avoids ambiguity
     const port = this.parsePort(entry.url);
     if (port && port !== 80 && port !== 443) {
-      this.log(`Falling back to port-based kill on :${port}`);
-      return await this.killByPort(port);
+      this.log(`Killing by port :${port}`);
+      const killed = await this.killByPort(port);
+      if (killed) { return true; }
     }
 
     if (port === 80 || port === 443) {
       this.log(`Skipping port ${port} (likely a reverse proxy)`);
+    }
+
+    // Strategy 2: command pattern fallback (Unix only)
+    if (process.platform !== 'win32') {
+      const killed = await this.killByCommand(cmd);
+      if (killed) { return true; }
     }
 
     this.log('No matching process found');
@@ -48,21 +49,17 @@ export class ProcessKiller {
   // Strategies
   // ---------------------------------------------------------------------------
 
-  private async killByCommand(cmd: string, cwd: string | undefined): Promise<boolean> {
-    // Try full command first (exact match)
-    const fullPids = await this.pgrepWithCwd(cmd, cwd);
-    if (fullPids.length > 0) {
-      return await this.killSafePids(fullPids);
-    }
+  private async killByCommand(cmd: string): Promise<boolean> {
+    const pids = await this.pgrep(cmd);
+    if (pids.length > 0) { return await this.killSafePids(pids); }
 
     // For compound commands (&&, ;), collect PIDs from ALL segments so we
     // kill every related process — e.g. both Puma and webpack from one alias.
     const segments = this.splitCommandSegments(cmd);
     if (segments.length > 0) {
       const allPids: string[] = [];
-      for (const pattern of segments) {
-        const pids = await this.pgrepWithCwd(pattern, cwd);
-        allPids.push(...pids);
+      for (const segment of segments) {
+        allPids.push(...await this.pgrep(segment));
       }
       if (allPids.length > 0) {
         return await this.killSafePids([...new Set(allPids)]);
@@ -73,29 +70,13 @@ export class ProcessKiller {
     return false;
   }
 
-  /** Try pgrep -f for a pattern, optionally filtering by cwd. */
-  private async pgrepWithCwd(pattern: string, cwd: string | undefined): Promise<string[]> {
+  private async pgrep(pattern: string): Promise<string[]> {
     try {
       const { stdout } = await execAsync(`pgrep -f ${this.shellEscape(pattern)}`);
-      let pids = stdout.trim().split('\n').filter(Boolean);
-      this.log(`pgrep "${pattern}" matched PIDs: ${pids.join(', ')}`);
-      if (pids.length === 0) { return []; }
-
-      if (cwd) {
-        const filtered: string[] = [];
-        for (const pid of pids) {
-          const procCwd = await this.getProcessCwd(pid);
-          if (procCwd?.startsWith(cwd)) { filtered.push(pid); }
-        }
-        if (filtered.length > 0) {
-          pids = filtered;
-          this.log(`After cwd filter (${cwd}): ${pids.join(', ')}`);
-        } else {
-          this.log(`No PIDs matched cwd "${cwd}", skipping to avoid killing unrelated processes`);
-          return [];
-        }
+      const pids = stdout.trim().split('\n').filter(Boolean);
+      if (pids.length > 0) {
+        this.log(`pgrep "${pattern}" matched PIDs: ${pids.join(', ')}`);
       }
-
       return pids;
     } catch {
       return [];
@@ -196,21 +177,6 @@ export class ProcessKiller {
     return own;
   }
 
-  private async getProcessCwd(pid: string): Promise<string | undefined> {
-    try {
-      if (process.platform === 'linux') {
-        const { stdout } = await execAsync(`readlink /proc/${pid}/cwd`);
-        return stdout.trim() || undefined;
-      }
-      if (process.platform === 'darwin') {
-        const { stdout } = await execAsync(`lsof -a -d cwd -p ${pid} -Fn 2>/dev/null`);
-        for (const line of stdout.split('\n')) {
-          if (line.startsWith('n/')) { return line.slice(1); }
-        }
-      }
-    } catch { /* ignore */ }
-    return undefined;
-  }
 
   private parsePort(url: string): number | undefined {
     try {
@@ -224,37 +190,28 @@ export class ProcessKiller {
     }
   }
 
-  private async parseStartCommand(startCommand: string): Promise<{ cwd?: string; cmd: string }> {
-    const parsed = this.parseCdPrefix(startCommand);
-    if (parsed.cwd) { return parsed; }
+  /** Extract the actual executable command from a startCommand string. */
+  private async resolveCmd(startCommand: string): Promise<string> {
+    // Strip "cd /path && " prefix
+    const cdMatch = startCommand.match(/^cd\s+("[^"]+"|'[^']+'|\S+)\s*(?:&&|;)\s*(.+)$/);
+    if (cdMatch) { return cdMatch[2].trim(); }
 
-    // Bare single-word command — might be a shell alias/function.
-    // Resolve it so pgrep can match the real process command line.
+    // Bare single-word command — might be a shell alias/function
     if (process.platform !== 'win32' && /^\S+$/.test(startCommand)) {
-      const resolved = await this.resolveCommand(startCommand);
+      const resolved = await this.resolveShellCommand(startCommand);
       if (resolved) { return resolved; }
     }
 
-    return { cmd: startCommand };
-  }
-
-  private parseCdPrefix(command: string): { cwd?: string; cmd: string } {
-    const match = command.match(/^cd\s+("[^"]+"|'[^']+'|\S+)\s*(?:&&|;)\s*(.+)$/);
-    if (match) {
-      const cwd = match[1].replace(/^['"]|['"]$/g, '');
-      return { cwd, cmd: match[2].trim() };
-    }
-    return { cmd: command };
+    return startCommand;
   }
 
   /**
    * Resolve a bare command name through the user's shell.
    * Handles aliases (single-line) and functions (multi-line body).
    */
-  private async resolveCommand(command: string): Promise<{ cwd?: string; cmd: string } | undefined> {
+  private async resolveShellCommand(command: string): Promise<string | undefined> {
     const shell = process.env.SHELL || '/bin/bash';
 
-    // 1. Check what kind of command it is
     let typeOutput: string;
     try {
       const { stdout } = await execAsync(
@@ -264,19 +221,19 @@ export class ProcessKiller {
       typeOutput = stdout.trim();
     } catch { return undefined; }
 
-    // 2a. Alias — single-line expansion
+    // Alias — single-line expansion
     // zsh:  "foo is an alias for cd /path && cmd"
     // bash: "foo is aliased to `cd /path && cmd'"
     const aliasMatch = typeOutput.match(/is (?:aliased to|an alias for)\s+[`']?(.+?)[`']?\s*$/);
     if (aliasMatch) {
       const expanded = aliasMatch[1];
       this.log(`Resolved alias "${command}" → "${expanded}"`);
-      const parsed = this.parseCdPrefix(expanded);
-      return parsed.cwd ? parsed : { cmd: expanded };
+      // Strip cd prefix from alias expansion too
+      const cdMatch = expanded.match(/^cd\s+("[^"]+"|'[^']+'|\S+)\s*(?:&&|;)\s*(.+)$/);
+      return cdMatch ? cdMatch[2].trim() : expanded;
     }
 
-    // 2b. Shell function — get the body via `which`, extract executable lines.
-    //     killSafePids walks the full descendant tree, so finding the parent is enough.
+    // Shell function — extract executable lines from body
     if (/shell function/.test(typeOutput)) {
       try {
         const { stdout } = await execAsync(
@@ -295,7 +252,7 @@ export class ProcessKiller {
         if (cmds.length > 0) {
           const cmd = cmds.join(' && ');
           this.log(`  cmd="${cmd}"`);
-          return { cmd };
+          return cmd;
         }
       } catch { /* function body unavailable */ }
     }

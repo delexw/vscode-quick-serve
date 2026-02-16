@@ -230,13 +230,8 @@ export class ProcessKiller {
     // Bare single-word command — might be a shell alias/function.
     // Resolve it so pgrep can match the real process command line.
     if (process.platform !== 'win32' && /^\S+$/.test(startCommand)) {
-      const resolved = await this.resolveShellAlias(startCommand);
-      if (resolved) {
-        this.log(`Resolved alias "${startCommand}" → "${resolved}"`);
-        const resolvedParsed = this.parseCdPrefix(resolved);
-        if (resolvedParsed.cwd) { return resolvedParsed; }
-        return { cmd: resolved };
-      }
+      const resolved = await this.resolveCommand(startCommand);
+      if (resolved) { return resolved; }
     }
 
     return { cmd: startCommand };
@@ -251,18 +246,59 @@ export class ProcessKiller {
     return { cmd: command };
   }
 
-  private async resolveShellAlias(command: string): Promise<string | undefined> {
+  /**
+   * Resolve a bare command name through the user's shell.
+   * Handles aliases (single-line) and functions (multi-line body).
+   */
+  private async resolveCommand(command: string): Promise<{ cwd?: string; cmd: string } | undefined> {
     const shell = process.env.SHELL || '/bin/bash';
+
+    // 1. Check what kind of command it is
+    let typeOutput: string;
     try {
       const { stdout } = await execAsync(
         `${shell} -ic 'type ${this.shellEscape(command)}' 2>/dev/null`,
         { timeout: 3000 },
       );
-      // zsh:  "start_sso_server is an alias for cd /path && cmd"
-      // bash: "start_sso_server is aliased to `cd /path && cmd'"
-      const aliasMatch = stdout.match(/is (?:aliased to|an alias for)\s+[`']?(.+?)[`']?\s*$/);
-      if (aliasMatch) { return aliasMatch[1]; }
-    } catch { /* not an alias or shell unavailable */ }
+      typeOutput = stdout.trim();
+    } catch { return undefined; }
+
+    // 2a. Alias — single-line expansion
+    // zsh:  "foo is an alias for cd /path && cmd"
+    // bash: "foo is aliased to `cd /path && cmd'"
+    const aliasMatch = typeOutput.match(/is (?:aliased to|an alias for)\s+[`']?(.+?)[`']?\s*$/);
+    if (aliasMatch) {
+      const expanded = aliasMatch[1];
+      this.log(`Resolved alias "${command}" → "${expanded}"`);
+      const parsed = this.parseCdPrefix(expanded);
+      return parsed.cwd ? parsed : { cmd: expanded };
+    }
+
+    // 2b. Shell function — get the body via `which`, extract executable lines.
+    //     killSafePids walks the full descendant tree, so finding the parent is enough.
+    if (/shell function/.test(typeOutput)) {
+      try {
+        const { stdout } = await execAsync(
+          `${shell} -ic 'which ${this.shellEscape(command)}' 2>/dev/null`,
+          { timeout: 3000 },
+        );
+        const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+        this.log(`Resolved function "${command}" (${lines.length} lines)`);
+
+        const skip = /^(?:cd |export |source |exit|return|\.|#|{|}|[\w_]+\s*\(\)|ensure_|git |chmod |mkdir )/;
+        const setup = /uptodate|setup|install|bootstrap|migrate/i;
+        const cmds = lines
+          .filter(l => !skip.test(l) && !setup.test(l))
+          .map(l => l.replace(/^(?:[\w]+=\S+\s+)+/, ''));  // strip VAR=val prefixes
+
+        if (cmds.length > 0) {
+          const cmd = cmds.join(' && ');
+          this.log(`  cmd="${cmd}"`);
+          return { cmd };
+        }
+      } catch { /* function body unavailable */ }
+    }
+
     return undefined;
   }
 
